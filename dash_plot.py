@@ -1,6 +1,7 @@
 from dash import Dash, html, dcc, Input, Output
 import plotly.express as px
 import pandas as pd
+import dash_daq as daq
 
 external_stylesheets = [
     # Dash CSS
@@ -32,11 +33,15 @@ app.layout = html.Div(children=[
 
     # add input for expressions to match
     html.Div(['Match Expressions (comma separated): ',
-              dcc.Input(id='wall-name-input', type='text', value='awe, liv, spider')], style={'textAlign': 'center'}),
+              dcc.Input(id='wall-name-input', type='text', value='awe, liv, spider', debounce=True)], style={'textAlign': 'center'}),
 
     # add input for days to match
     html.Div(['Number of days: ',
               dcc.Input(id='num-days-input', type='number', value=30)], style={'textAlign': 'center'}),
+
+    # add input for days to match
+    html.Div(['Use Percentage Full: ', daq.BooleanSwitch(
+        id='use-percent-input', on=False)], style={'textAlign': 'center'}),
 
     dcc.Graph(id='example-graph')],
     style={'height': '100%'})
@@ -45,9 +50,10 @@ app.layout = html.Div(children=[
 @app.callback(
     Output(component_id='example-graph', component_property='figure'),
     [Input(component_id='wall-name-input', component_property='value'),
-     Input(component_id='num-days-input', component_property='value')]
+     Input(component_id='num-days-input', component_property='value'),
+     Input('use-percent-input', component_property='on')]
 )
-def update_graph(wall_name_input, num_days_input):
+def update_graph(wall_name_input, num_days_input, use_pct_input):
     # create regex from matching patterns
     matches = [s.strip() for s in wall_name_input.split(',')]
     matches = [s for s in matches if s]
@@ -61,19 +67,26 @@ def update_graph(wall_name_input, num_days_input):
     df = df.loc[df['scrape_date'] >= pd.to_datetime(
         'today').date() - pd.Timedelta(days=days - 1)]
 
-    # add a column for pct_full
-    df['pct_full'] = (100 * df['count'] / df['capacity']).round(2)
-
     title = f'UkWalls Data for walls matching [{wall_name_input}] in last {num_days_input} days'
     x_axis_title = 'Date'
-    y_axis_title = 'Percent Full at Peak'
+    y_axis_title = 'Count at Peak'
     legend_title = 'Wall Name'
 
-    fig = px.line(df, x="scrape_date", y="pct_full", color="name",
+    column = 'count'
+
+    if use_pct_input:
+        # add a column for pct_full
+        df['pct_full'] = (100 * df['count'] / df['capacity']).round(2)
+        y_axis_title = 'Percent Full at Peak'
+        column = 'pct_full'
+
+    fig = px.line(df, x="scrape_date", y=column, color="name",
                   custom_data=['count', 'capacity', 'time'], markers=True)
 
     fig.update_layout(title=title, title_x=0.5, xaxis_title=x_axis_title,
                       yaxis_title=y_axis_title, legend_title=legend_title, height=800)
+
+    fig.update_traces(patch={"line": {'dash': 'dot'}})
 
     fig.update_traces(
         hovertemplate="<br>".join([
